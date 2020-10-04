@@ -1,0 +1,119 @@
+//
+//    FILE: GarageDoor.ino
+//  AUTHOR: Barre
+// VERSION: 0.1.1
+// PURPOSE: closing garage door after 15 min open, when pushed button reset timer
+//    DATE: 2020-20-09
+//     URL: https://github.com//
+//
+
+#include <StopWatch.h>
+
+StopWatch MySW;
+
+int alarmTime = 10000;
+
+//buzzer
+int buzzer = 30 ;
+
+//LEDS
+int ledOpen = 4; // LED red => door open
+int ledClose = 5; // LED green => door open
+
+
+//hall sensors
+int hallSensorOpen = 8;  //door open
+int hallSensorClose = 9;  //door open
+
+
+//global variables
+int stateOpen = 0; 
+int stateClose = 0;
+
+void setup()
+{
+  Serial.begin(115200);
+  Serial.println("Stopwatch demo");
+  Serial.print("Version: ");
+  Serial.println(STOPWATCH_LIB_VERSION);
+
+//  SWarray[0].start();
+  //LEDS      
+  pinMode(ledOpen, OUTPUT);  
+  pinMode(ledClose, OUTPUT);  
+
+//Hall sensors      
+  pinMode(hallSensorOpen, INPUT);  
+   pinMode(hallSensorClose, INPUT); 
+
+//BUZZER
+  pinMode (buzzer, OUTPUT) ;
+  digitalWrite(buzzer, HIGH);  // sets the digital pin 30 off
+
+}
+
+void loop()
+{
+
+  alarmTime = 15000; //15sec
+  delay(100);
+
+
+
+
+ stateOpen = digitalRead(hallSensorOpen);
+  if (stateOpen == LOW) {        
+    digitalWrite(ledOpen, HIGH);  
+  } 
+  else {
+    digitalWrite(ledOpen, LOW); 
+  }
+ delay(1); // Delay for stability.
+//closed
+ stateClose = digitalRead(hallSensorClose);
+  if (stateClose == LOW) {        
+    digitalWrite(ledClose, HIGH);  
+  } 
+  else {
+    digitalWrite(ledClose, LOW); 
+  }
+ delay(1); // Delay for stability.
+
+ if (stateOpen == HIGH && stateClose == LOW){
+ MySW.start();
+  Serial.println(MySW.isRunning());  
+  for(int i=0; i<5; i++)
+  {
+    delay(10);
+    Serial.println(MySW.elapsed());
+ }
+
+if (MySW.elapsed()>alarmTime)
+{
+   alarmBuzzer();
+}
+
+ }
+  else
+  {
+      MySW.stop();
+      MySW.reset();
+ Serial.println(MySW.isRunning());
+  
+  }
+
+  delay(1);
+
+}
+
+void alarmBuzzer (){
+         digitalWrite (buzzer, LOW) ; //send tone
+      delay (150) ;
+      digitalWrite (buzzer, HIGH) ; //no tone
+            delay (150) ;
+      digitalWrite (buzzer, LOW) ; //no tone
+      delay (150) ;
+        digitalWrite (buzzer, HIGH) ; //no tone
+      
+}
+// -- END OF FILE --
