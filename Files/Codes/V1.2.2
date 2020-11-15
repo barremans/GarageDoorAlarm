@@ -1,0 +1,445 @@
+//
+// FILE: GarageDoor.ino
+// PURPOSE: closing garage door after 15 min open, when pushed button reset timer
+// START PROJECT DATE: 2020-20-09
+// VERSION DATE: 2020-15-11 V2
+// URL: https://github.com/barremans/GarageDoorAlarm
+// MAJOR RELEASE NOTE 1.1.9
+// 1.adding two condenstators 10µF 25V to the rotary encoder
+// 2. blink no use of delay
+// MAJOR RELEASE NOTE 1.2.1
+// 1.Moving alarm logica added
+// 2. clean up the code
+//
+#define SKETCH_VERSION "1.2.2"
+#include <StopWatch.h>
+#include <SimpleRotary.h>
+
+StopWatch MySW;
+
+int alarmTime = 5000;  //alarm time set when door is open
+int MovingTime = 10000;  // alarm time set when door is moving
+
+int addtime = 10000;  // adding time to timer when button is clicked
+int alarmState = 0;  // integer for showing one time the alarm message
+int prevTime = -1;  // previous time for displaying rest time
+
+//buzzer
+int buzzer = 30 ;  // buzzer pin
+
+//LEDS
+int ledRelays = 2; //LED white => relays operate state
+int ledAlarm = 3; // LED geel => alarm
+int ledOpen = 4; // LED red => door open
+int ledClose = 5; // LED green => door open
+int ledOperate = 6; // LED blue => door in operate
+
+//hall sensors
+int hallSensorOpen = 8;  //door open
+int hallSensorClose = 9;  //door open
+
+//global variables
+int stateOpen = 0;  // open reed switch statement
+int stateClose = 0;  // close reed switch statement
+
+// Rotary Encoder Inputs
+// Pin A, Pin B, Button Pin
+SimpleRotary rotary(48, 50, 52);
+
+int dir = 0;    // movement direction of the door 0= no movement, 1= opening, 2= closing
+int count = 0;  // counter integer relay used
+
+int closedT = 0; // integer for showing one time the closed message
+int movingT = 0;  // integer for showing one time the moving message
+int openT = 0;  // integer for showing one time the open message
+int changestatus = 0;  //integer that holds if status of the door is changed
+int closingC = 0;  // integer for showing one time the closing message after used relay
+
+// These variables store the flash pattern
+// and the current state of the LED
+int ledState = LOW;             // ledState used to set the LED
+unsigned long previousMillis = 0;        // will store last time LED was updated
+long OnTime = 550;           // milliseconds of on-time
+long OffTime = 750;          // milliseconds of off-time
+
+// These variables store the relay on/off time
+// and the current state of the RELAY
+int relayState = LOW;             // RelayState used to set the relay
+unsigned long RpreviousMillis = 0;        // will store last time relays was updated
+long ROnTime = 1000;           // milliseconds of on-time
+long ROffTime = 1000;          // milliseconds of off-time
+
+////////////// END VARIABLES ///////////////////
+
+void setup()
+{
+  Serial.begin(115200);
+  Serial.println("Garagedoor");
+  Serial.print("Version: ");
+  Serial.println(SKETCH_VERSION);
+
+  //  SWarray[0].start();
+  //LEDS
+  pinMode(ledRelays, OUTPUT);
+  pinMode(ledOpen, OUTPUT);
+  pinMode(ledClose, OUTPUT);
+  pinMode(ledAlarm, OUTPUT);
+  digitalWrite(ledAlarm, LOW);  // sets the digital pin 30 off
+
+  //Hall sensors
+  pinMode(hallSensorOpen, INPUT);
+  pinMode(hallSensorClose, INPUT);
+
+  //BUZZER
+  pinMode (buzzer, OUTPUT) ;
+  digitalWrite(buzzer, HIGH);  // sets the digital pin 30 off
+
+  //RELAY
+  int relayState = LOW;
+
+}
+
+///////////// END SETUP ///////////////////////////////
+
+void loop()
+{
+
+
+  //LED  door open RED = HIGH, closed GREEN = HIGH
+  //open
+  stateOpen = digitalRead(hallSensorOpen);
+  if (stateOpen == HIGH) {
+    digitalWrite(ledOpen, HIGH);
+  }
+  else {
+    digitalWrite(ledOpen, LOW);
+  }
+
+  //closed
+  stateClose = digitalRead(hallSensorClose);
+  if (stateClose == HIGH) {
+    digitalWrite(ledClose, HIGH);
+  }
+  else {
+    digitalWrite(ledClose, LOW);
+  }
+
+  if (stateClose == LOW && stateOpen == LOW) {
+    digitalWrite(ledOperate, HIGH);
+  }
+  else {
+    digitalWrite(ledOperate, LOW);
+  }
+  //////// END LED CONFIG ///////////////
+
+
+  ///CLOSE LOGICA ////////////////
+  if (stateOpen == LOW && stateClose == HIGH ) {
+    CloseLogica();
+
+    if (closedT == 0) {
+      CloseLogicaT ();
+    }
+  }
+
+
+  ///MOVING LOGICA ////////////////
+  if (stateOpen == LOW && stateClose == LOW ) {
+    if ( movingT == 0)
+    {
+      movingLogicaT();
+    }
+    if (changestatus == 0)
+    {
+      movingLogicaS();
+    }
+    else
+    {
+      MySW.start();
+      for (int i = 0; i < 5; i++)
+      {
+        delay(10);
+        if (MySW.elapsed() > MovingTime)
+
+        {
+
+          //  if opening , try 3 times relay for closing door else alarm
+          relays ();
+          //
+
+
+          //
+          if (alarmState == 0)
+          {
+            Serial.println("alarm");
+            alarmState = 1;
+          }
+          alarmBuzzer();
+        }
+        else
+        {
+          if (prevTime == (MySW.elapsed() / 1000))
+          {
+            // do nothing
+          }
+          else
+          {
+            MovingPrintTimer();
+          }
+        }
+      }
+    }
+  }
+  ///END MOVING LOGICA ////////////
+
+
+
+  /// time opening or closing max 30sec  ///////////
+  ////////  OPEN LOGICA ////////
+
+  if (stateOpen == HIGH && stateClose == LOW ) {
+    if ( openT == 0) {
+      OpenLogica();
+    }
+    if (changestatus == 0) {
+      OpenLogicaS ();
+    }
+    else
+    {
+      MySW.start();
+      for (int i = 0; i < 5; i++)
+      {
+        delay(10);
+      }
+      if (MySW.elapsed() > alarmTime)
+      {
+        if (alarmState == 0)
+        {
+          Serial.println("alarm");
+          alarmState = 1;
+        }
+        alarmBuzzer();
+      }
+      else
+      {
+        if (prevTime == (MySW.elapsed() / 1000))
+        {
+          // do nothing
+        }
+        else
+        {
+          OpenPrintTimer();
+        }
+      }
+    }
+  }
+
+
+
+
+  ///// START ROTARY   ////////
+  byte i;
+
+  // 0 = not turning, 1 = CW, 2 = CCW
+  i = rotary.rotate();
+
+  if ( i == 1 ) {
+    Serial.println("OPENING");
+    dir = 1;
+  }
+
+  if ( i == 2 ) {
+    Serial.println("CLOSING");
+    dir = 2;
+  }
+  ////////// END ROTARY //////////////////////
+
+
+}
+//// END LOOP /////////
+
+
+// FUNCTIONS /////
+
+void alarmBuzzer () {
+  // check to see if it's time to change the state of the LED
+  unsigned long currentMillis = millis();
+
+  if ((ledState == HIGH) && (currentMillis - previousMillis >= OnTime))
+  {
+    ledState = LOW;  // Turn it off
+    previousMillis = currentMillis;  // Remember the time
+    digitalWrite(ledAlarm, ledState);  // Update the actual LED
+  }
+  else if ((ledState == LOW) && (currentMillis - previousMillis >= OffTime))
+  {
+    ledState = HIGH;  // turn it on
+    previousMillis = currentMillis;   // Remember the time
+    digitalWrite(ledAlarm, ledState);    // Update the actual LED
+  }
+
+}
+
+void counterAlarm() {
+  if (count < 3) {
+    count ++;
+    Serial.print("count: ");
+    Serial.println(count);
+    delay(1000);
+
+  }
+  else {
+
+  }
+}
+
+
+void relays () {
+  unsigned long RcurrentMillis = millis();
+
+  // door openening ////
+  if (dir == 1 || dir == 0) {
+
+    // start count if //
+    if (count < 3) {
+
+      if ((relayState == LOW) && (RcurrentMillis - RpreviousMillis >= ROffTime))
+      {
+        relayState = HIGH;  // turn it on
+        RpreviousMillis = RcurrentMillis;   // Remember the time
+        digitalWrite(ledRelays, relayState);    // Update the actual Relay
+        count ++;
+        Serial.print("countR: ");
+        Serial.println(count);
+      }
+
+
+      else  if ((relayState == HIGH) && (RcurrentMillis - RpreviousMillis >= ROnTime))
+      {
+        relayState = LOW;  // Turn it off
+        RpreviousMillis = RcurrentMillis;  // Remember the time
+        digitalWrite(ledRelays, relayState);  // Update the actual Relay
+      }
+    }
+    else {
+
+    }
+    // end count if //
+  }
+
+  else {
+    count = 0;
+  }
+  // end if dir ==1 or 0//
+
+  // door closing after relay use //
+  if (dir == 2) {
+    if (closingC == 1) {
+
+    }
+    else {
+      Serial.println("Door closing after relay use.");
+      closingC = 1;
+    }
+  }
+
+
+
+
+
+  // make relay off after the third try//
+  if ((relayState == HIGH) && (count == 3) && (RcurrentMillis - RpreviousMillis >= ROnTime))
+  {
+    relayState = LOW;  // Turn it off
+    RpreviousMillis = RcurrentMillis;  // Remember the time
+    digitalWrite(ledRelays, relayState);  // Update the actual Relay
+    Serial.println("Door jammed");
+  }
+
+
+}
+
+///// CLOSE FUNCTIONS ///////////
+void CloseLogica() {
+  MySW.stop();
+  MySW.reset();
+  dir = 0;
+  changestatus = 0;
+  prevTime = -1;
+  count = 0;
+  int relayState = LOW;
+}
+
+void CloseLogicaT() {
+  Serial.println("closed logica");
+  closedT = 1;
+  movingT = 0;
+  openT = 0;
+  count = 0;
+  digitalWrite(ledAlarm, LOW);
+  int relayState = LOW;
+}
+///// END CLOSE FUNCTIONS ///////
+
+
+
+///// MOVING FUNCTIONS ///////////
+
+void MovingPrintTimer () {
+  Serial.println((MovingTime / 1000) - (MySW.elapsed() / 1000));
+  prevTime = (MySW.elapsed() / 1000);
+}
+
+void movingLogicaT() {
+  Serial.println("Moving logica");
+  closedT = 0;
+  movingT = 1;
+  openT = 0;
+  dir = 0;
+  changestatus = 0;
+  prevTime = -1;
+  digitalWrite(ledAlarm, LOW);
+  count = 0;
+  int relayState = LOW;
+}
+
+void movingLogicaS () {
+  MySW.stop();
+  MySW.reset();
+  changestatus = 1;
+  prevTime = -1;
+  alarmState = 0;
+  count = 0;
+  delay(50);
+}
+///// END MOVING FUNCTIONS ///////
+
+
+///// OPEN FUNCTIONS ///////////
+void OpenLogica() {
+  Serial.println("open logica");
+  closedT = 0;
+  movingT = 0;
+  openT = 1;
+  dir = 0;
+  changestatus = 0;
+  prevTime = -1;
+  count = 0;
+  digitalWrite(ledAlarm, LOW);
+}
+
+void OpenLogicaS () {
+  MySW.stop();
+  MySW.reset();
+  changestatus = 1;
+  count = 0;
+  int relayState = LOW;
+  delay(50);
+}
+
+void OpenPrintTimer() {
+  Serial.println((alarmTime / 1000) - (MySW.elapsed() / 1000));
+  prevTime = (MySW.elapsed() / 1000);
+}
+///// END OPEN FUNCTIONS ///////
+// -- END OF FILE --
